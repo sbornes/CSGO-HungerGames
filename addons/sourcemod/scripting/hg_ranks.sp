@@ -101,8 +101,19 @@ public PanelHandler1(Handle:menu, MenuAction:action, param1, param2)
 {
 	if (action == MenuAction_Select)
 	{
-		CloseHandle(panel);
+		CloseHandle(menu);
 	}
+}
+
+public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
+{
+    CreateNative("HG_Winner", Native_HG_Winner);
+    return APLRes_Success;
+}
+
+public Native_HG_Winner(Handle:plugin, numParams)
+{
+    PlayerInfo[GetNativeCell(1)][pWins]++;
 }
 
 public MySQL_Init()
@@ -139,12 +150,12 @@ public SaveData(client)
 	decl String:szQuery[ 256 ]; 
 	
 	decl String:szKey[64];
-	GetClientAuthString( client, szKey, sizeof(szKey) );
-	
+	//GetClientAuthString( client, szKey, sizeof(szKey) );
+	GetClientAuthId(client, AuthId_Steam3, szKey, sizeof(szKey));
 	Format( szQuery, sizeof( szQuery ), "REPLACE INTO `hg_stats` (`player_id`, `player_name`, `player_kills`, `player_deaths`, `player_wins`,`player_killstreak`) VALUES ('%s', '%N', '%d', '%d', '%d', '%d';", szKey , client, PlayerInfo[client][pKills], PlayerInfo[client][pDeaths],PlayerInfo[client][pWins],PlayerInfo[client][pKillStreak]);
 	
 	SQL_TQuery( hDatabase, QuerySetData, szQuery, client)
-}
+} 
 
 public QuerySetData( Handle:owner, Handle:hndl, const String:error[], any:data)
 { 
@@ -161,8 +172,8 @@ public LoadData(client)
 	decl String:szQuery[ 256 ]; 
 	
 	decl String:szKey[64];
-	GetClientAuthString( client, szKey, sizeof(szKey) );
-	
+	//GetClientAuthString( client, szKey, sizeof(szKey) );
+	GetClientAuthId(client, AuthId_Steam3, szKey, sizeof(szKey));
 	Format( szQuery, sizeof( szQuery ), "SELECT `player_kills`, `player_deaths`, `playwe_wins`, `player_killstreak` FROM `hg_stats` WHERE ( `player_id` = '%s' );", szKey );
 	
 	SQL_TQuery( hDatabase, QuerySelectData, szQuery, client)

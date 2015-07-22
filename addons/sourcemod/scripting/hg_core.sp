@@ -132,6 +132,7 @@
 #include <sourcemod>
 #include <cstrike>
 #include <emitsoundany>
+#include <hg_rank>
 
 new Handle:hDisableRadar = INVALID_HANDLE;
 new Handle:hDisableHPAR = INVALID_HANDLE;
@@ -142,6 +143,11 @@ new Handle:hOnGameStart = INVALID_HANDLE;
 new bool:HG_ShowPos[MAXPLAYERS+1];
 new bool:HG_Started = false;
 new timertick = 0;
+
+new g_beamsprite, g_halosprite;
+new OriginOffset;
+
+new Handle:BeaconTimer = INVALID_HANDLE;
 
 #define HGMAXTIPS 6
 new const String:gGamePlayTips[HGMAXTIPS][] = 
@@ -159,6 +165,7 @@ public OnPluginStart()
     HookEvent("player_spawn", Player_Spawn);
     HookEvent("round_start", Round_Start);
     HookEvent("round_end", Round_End);
+    HookEvent("player_disconnect", Event_PlayerDisconnect, EventHookMode_Post)
 
     hDisableRadar = CreateConVar("hg_disableradar", "1", "Disable Radar?", _, true, _, true, 1.0);
     hDisableHPAR = CreateConVar("hg_disablehpar", "0", "Disable HP and AR HUD?", _, true, _, true, 1.0);
@@ -175,7 +182,13 @@ public OnMapStart()
 {
     InitCvars();
     AddFileToDownloadsTable("sound/hungergames/roundstart.mp3");
-    PrecacheSoundAny("hungergames/roundstart.mp3");   
+    PrecacheSoundAny("hungergames/roundstart.mp3"); 
+
+    g_beamsprite = PrecacheModel("materials/sprites/laserbeam.vmt");
+    g_halosprite = PrecacheModel("materials/sprites/halo.vmt");
+
+    AddFileToDownloadsTable("sound/hungergames/hg_cannon2.mp3");
+    PrecacheSoundAny("hungergames/hg_cannon2.mp3", true); 
 }
 
 InitCvars()
@@ -209,6 +222,12 @@ public Round_Start(Handle:event, const String:name[], bool:dontBroadcast)
     {
         timertick = 0;
         hRoundStart = CreateTimer( 1.0, PreGame, _, TIMER_REPEAT );
+    }
+
+    if( BeaconTimer != INVALID_HANDLE )
+    {
+        KillTimer(BeaconTimer);
+        BeaconTimer = INVALID_HANDLE;
     }
 }
 
@@ -266,6 +285,77 @@ public Player_Spawn(Handle:event, const String:name[], bool:dontBroadcast)
     CreateTimer(0.0, RemoveHUD, client);
 }  
 
+public Event_OnPlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
+{
+    EmitSoundToAllAny("hungergames/hg_cannon2.mp3")
+    new victim = GetClientOfUserId(GetEventInt(event, "userid"));
+    new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+
+    if (!IsValidClient(attacker) || !IsValidClient(victim))
+        return;
+
+
+    if (attacker == 0)
+    {
+        PrintToChatAll("%N was killed by natural causes", victim)
+    }
+    else if (IsValidClient(attacker) && IsValidClient(victim))
+    {
+        PrintToChatAll("%N has been killed by %N", victim, attacker)
+    }
+
+    if (playersalive() > 2)
+    {
+        PrintToChatAll("%d players remain", playersalive())         
+    }
+    else if(playersalive() == 2)
+    {
+        PrintToChatAll("Only 2 players remain!")
+        if( BeaconTimer == INVALID_HANDLE )
+            BeaconTimer = CreateTimer(2.0, PlayerBeacon, _, TIMER_REPEAT)
+    }
+    else if(playersalive() == 1)
+    {
+        PrintToChatAll("%N has been crowned the victor of the Hunger Games!", playername())
+        ServerCommand("sm_cvar mp_restartgame 5");
+        HG_Winner(playername());
+    }   
+}
+
+public Action:Event_PlayerDisconnect(Handle:event, const String:name[], bool:dontBroadcast) 
+{
+    if (playersalive() > 2)
+    {
+        PrintToChatAll("%d players remain", playersalive())
+    }
+    else if (playersalive() == 2)
+    {
+        PrintToChatAll("Only 2 players remain!", playersalive())
+        if( BeaconTimer == INVALID_HANDLE )
+            BeaconTimer = CreateTimer(2.0, PlayerBeacon, _, TIMER_REPEAT)
+    }
+    else if(playersalive() == 1)
+    {
+        PrintToChatAll("%N has been crowned the victor of the Hunger Games!", playername())
+        ServerCommand("sm_cvar mp_restartgame 5");
+        HG_Winner(playername());
+    }   
+}
+
+public Action:PlayerBeacon(Handle:timer)
+{
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsValidClient(i) && IsPlayerAlive(i))
+        {
+            new Float:pOrigin[3];
+            GetEntityOrigin(i, pOrigin);
+            TE_SetupBeamRingPoint(pOrigin, 10.0, 500.0, g_beamsprite, g_halosprite, 1, 1, 0.0, 1.0, 1.0, {255, 255, 255, 255}, 1, 1)
+            TE_SendToAll();             
+        }
+    }
+}
+
 
 public Action:RemoveHUD(Handle:timer, any:client) 
 {
@@ -296,13 +386,13 @@ public Action:TogglePos(client, args)
         if (HG_ShowPos[client] == true)
         {
             HG_ShowPos[client] = false;
-            ClientCommand(client, "cl_showpos 0");
+            FakeClientCommand(client, "cl_showpos 0");
             PrintToChat(client, "You have disabled positions. Say !pos to enable them again.")
         }
         else if (HG_ShowPos[client] == false)
         {
             HG_ShowPos[client] = true;
-            ClientCommand(client, "cl_showpos 1");
+            FakeClientCommand(client, "cl_showpos 1");
             PrintToChat(client, "You have enabled positions. Say !pos to disable them.")
         }
     }
@@ -327,3 +417,33 @@ public Native_HG_GameStart(Handle:plugin, numParams)
 // Use This For Voice Radius - SetListenOverride(iReceiver, iSender, ListenOverride:override)
 
 /* [ OnGameFrame ] */
+
+stock playersalive()
+{
+    new playersalivevar;
+    for (new i = 1; i <= MaxClients; i++) 
+    {
+        if (IsValidClient(i) && IsPlayerAlive(i))
+        {
+            playersalivevar++
+        }
+    }
+    return playersalivevar
+}
+
+stock playername()
+{
+    new playernamevar;
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsValidClient(i) && IsPlayerAlive(i))
+        {
+            playernamevar = i
+        }
+    }
+    return playernamevar
+}
+public GetEntityOrigin(entity, Float:output[3])
+{
+    GetEntDataVector(entity, OriginOffset, output);
+}

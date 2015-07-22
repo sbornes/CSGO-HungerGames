@@ -89,7 +89,7 @@ public TouchPostCallback(entity, other)
         	if( HungerPercentage[entity] < 50 )
         		HungerPercentage[entity] += 50;
         	else
-        		HungerPercentage[entity] += 100;
+        		HungerPercentage[entity] = 100;
 
         	new Float:soundOrigin[3];
         	GetEntityOrigin(entity, soundOrigin)
@@ -142,7 +142,7 @@ public OnEntityDestroyed(entity)
 				SetEntProp(healthkit, Prop_Send, "m_CollisionGroup", 11)
 			}
 			TeleportEntity(healthkit, pOrigin, NULL_VECTOR, NULL_VECTOR)
-			
+			//PrintToChatAll("CHICKEN KILLED")
 		}
 	}
 }
@@ -265,7 +265,7 @@ actionDamage(client)
 			new amount = 1;
 			Entity_SetHealth(client, Entity_GetHealth(client) - amount)
 		}
-		NextDamageTime[client] = GetGameTime() + 0.5;
+		NextDamageTime[client] = GetGameTime() + 2.0;
 	}
 }		
 
